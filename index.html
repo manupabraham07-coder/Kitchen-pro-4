@@ -20,7 +20,7 @@ html{scroll-behavior:smooth}body{padding-bottom:72px;-webkit-tap-highlight-color
 <body>
 <div id="app"></div>
 <script>
-const KEY="kitchen_service_pro_v4";
+const KEY="kitchen_service_pro_v5";
 const $=s=>document.querySelector(s);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const now=()=>new Date().toISOString();
@@ -31,12 +31,13 @@ const timeNow=()=>new Date().toTimeString().slice(0,5);
 const defaultState=()=>({
   user:null, date:today(),
   settings:{capacity:50000, currency:"INR"},
-  members:[], departments:["Kitchen","Store","Production","Cleaning","Transport","Office"],
+  members:[], departments:["Rice","Curry","Tea","Washing","Store","Breakfast","Cutting","In-charge"],
   meals:{}, menu:[], recipes:[], rawMaterials:[], suppliers:[], purchases:[], issues:[], returns:[],
   production:[], consumption:[], wastage:[], costs:[], gas:[], cleaning:[], equipment:[], vessels:[],
   tasks:[], attendance:[], audit:[]
 });
-let S=JSON.parse(localStorage.getItem(KEY)||"null")||defaultState();
+let S=JSON.parse(localStorage.getItem(KEY)||"null");
+if(!S){let old=JSON.parse(localStorage.getItem("kitchen_service_pro_v4")||"null");S=old||defaultState();S.departments=S.departments?.length?S.departments:["Rice","Curry","Tea","Washing","Store","Breakfast","Cutting","In-charge"];save()}
 S.reminders=S.reminders||[];
 S.duties=S.duties||[];
 S.notifications=S.notifications||[];
@@ -90,7 +91,7 @@ seed();
 checkStockAlerts();
 
 const tabs=[
- ["dash","Dashboard"],["people","Staff"],["att","Attendance"],["meals","Meal Count"],["menu","Menu"],
+ ["dash","Dashboard"],["people","Staff"],["departments","Departments"],["att","Attendance"],["meals","Meal Count"],["menu","Menu"],
  ["calc","Calculation"],["recipe","Recipes"],["stock","Stock"],["purchase","Purchase"],["issue","Issue/Return"],
  ["prod","Production"],["consume","Consumption"],["waste","Wastage"],["cost","Food Cost"],["gas","Gas"],
  ["clean","Cleaning"],["equip","Equipment"],["vessel","Vessels"],["tasks","Tasks"],["duty","Duty & Schedule"],["remind","Reminders"],["reports","Reports"],["admin","Admin"]
@@ -130,6 +131,12 @@ function page_people(){
 function addPerson(){if(S.members.length>=300)return alert("300 staff limit");S.members.push({id:uid(),name:pn.value,emp:pe.value,phone:pp.value,place:pl.value,dept:pd.value});log("Staff added",pe.value);save();render()}
 function delPerson(id){if(!confirm("Delete this staff?"))return;S.members=S.members.filter(x=>x.id!==id);log("Staff deleted",id);save();render()}
 
+function page_departments(){
+ return `<h2>🏷️ Departments / Sections</h2>${canEdit()?`<div class="card"><h3>Add Department</h3><div class="form"><div class="field"><label>Department / Section</label><input id="depName" placeholder="ഉദാ: Rice, Curry, Tea"></div></div><div class="actions"><button class="btn" onclick="addDepartment()">Add Department</button></div></div>`:""}<div class="card"><h3>Sections</h3><div class="grid">${S.departments.map(d=>`<div class="card" style="margin:0"><b>${esc(d)}</b><div class="muted">${S.members.filter(m=>m.dept===d).length} staff</div>${canEdit()?`<button class="btn danger" style="margin-top:8px" onclick="deleteDepartment('${esc(d)}')">Delete</button>`:""}</div>`).join('')}</div></div>`;
+}
+function addDepartment(){let n=depName.value.trim();if(!n)return alert('Department name നൽകുക');if(S.departments.some(d=>d.toLowerCase()===n.toLowerCase()))return alert('ഇത് ഇതിനകം ഉണ്ട്');S.departments.push(n);log('Department added',n);save();render()}
+function deleteDepartment(d){if(S.members.some(m=>m.dept===d))return alert('ഈ department-ൽ staff ഉണ്ട്. ആദ്യം staff മാറ്റുക.');if(!confirm('Delete '+d+'?'))return;S.departments=S.departments.filter(x=>x!==d);log('Department deleted',d);save();render()}
+
 function page_att(){
  let rows=S.members.map(m=>{let a=S.attendance.find(x=>x.date===S.date&&x.memberId===m.id);return `<tr><td>${esc(m.emp)}</td><td>${esc(m.name)}</td><td>${esc(m.dept)}</td><td>${a?.in||"-"}</td><td>${a?.out||"-"}</td><td>${a?.in&&a?.out?hours(a.in,a.out):"-"}</td><td><button class="btn" onclick="punch('${m.id}','in')">IN</button> <button class="btn secondary" ${a?.in?"":"disabled"} onclick="punch('${m.id}','out')">OUT</button></td></tr>`}).join("");
  return `<h2>Attendance</h2><div class="card"><div class="form"><div class="field"><label>Date</label><input type="date" value="${S.date}" onchange="S.date=this.value;save();render()"></div><div><div class="muted">Staff</div><div class="kpi">${S.members.length}/300</div></div><div><div class="muted">Present</div><div class="kpi">${S.attendance.filter(x=>x.date===S.date&&x.in).length}</div></div></div></div><div class="card"><div class="tablewrap"><table class="table"><tr><th>ID</th><th>Name</th><th>Dept</th><th>IN</th><th>OUT</th><th>Hours</th><th>Action</th></tr>${rows}</table></div></div>`;
@@ -139,8 +146,12 @@ function punch(mid,type){let a=S.attendance.find(x=>x.date===S.date&&x.memberId=
 
 function page_meals(){
  let m=S.meals[S.date]||{breakfast:0,lunch:0,dinner:0};
- return `<h2>Meal Count</h2><div class="card"><div class="form"><div class="field"><label>Date</label><input type="date" value="${S.date}" onchange="S.date=this.value;save();render()"></div><div class="field"><label>Breakfast</label><input id="mb" type="number" value="${m.breakfast}"></div><div class="field"><label>Lunch</label><input id="ml" type="number" value="${m.lunch}"></div><div class="field"><label>Dinner</label><input id="md" type="number" value="${m.dinner}"></div></div><div class="actions"><button class="btn" onclick="saveMeals()">Save Meal Count</button></div></div>`;
+ const box=(meal,key)=>{let items=S.menu.filter(x=>x.date===S.date&&x.meal===meal);let people=Number(m[key]||0);return `<div class="card"><h3>${meal}</h3><div class="form"><div class="field"><label>ആളുകളുടെ എണ്ണം</label><input id="${key}People" type="number" min="0" value="${people}"></div><div class="field"><label>Recipe / Food</label><select id="${key}Recipe"><option value="">Select food</option>${S.recipes.map(r=>`<option value="${esc(r.name)}">${esc(r.name)}</option>`).join("")}</select></div><div class="field"><label>പുതിയ Food name (optional)</label><input id="${key}New" placeholder="ഉദാ: ദോശ / സാമ്പാർ"></div></div><div class="actions"><button class="btn" onclick="saveMealAndAdd('${meal}','${key}')">Save + Add Food</button></div><div style="margin-top:8px">${items.map(x=>`<span class="pill" style="margin:3px">${esc(x.name)} <button style="background:none;color:#b42318" onclick="removeMenu('${x.id}')">×</button></span>`).join("")||'<span class="muted">Food items ഒന്നും ചേർത്തിട്ടില്ല.</span>'}</div></div>`};
+ return `<h2>🍽️ Daily Food Plan</h2><div class="card"><div class="field"><label>Date</label><input type="date" value="${S.date}" onchange="S.date=this.value;save();render()"></div><p class="muted">ആ ദിവസത്തെ ആളുകളുടെ എണ്ണം + Breakfast/Lunch/Dinner menu ഇവിടെ തന്നെ നൽകാം. Recipe ഉണ്ടെങ്കിൽ quantity automatic ആയി കണക്കാക്കും.</p></div>${box('Breakfast','breakfast')}${box('Lunch','lunch')}${box('Dinner','dinner')}<div class="card"><h3>🧮 ഇന്നത്തെ സാധനങ്ങളുടെ കണക്ക്</h3>${mealPlanSummary(S.date)}</div>`;
 }
+function saveMealAndAdd(meal,key){let people=+document.getElementById(key+'People').value||0;S.meals[S.date]=S.meals[S.date]||{breakfast:0,lunch:0,dinner:0};S.meals[S.date][key]=people;let name=document.getElementById(key+'New').value.trim()||document.getElementById(key+'Recipe').value;if(name&&!S.menu.some(x=>x.date===S.date&&x.meal===meal&&x.name.toLowerCase()===name.toLowerCase()))S.menu.push({id:uid(),date:S.date,meal,name});log('Daily food plan saved',meal+' / '+people);save();render()}
+function removeMenu(id){S.menu=S.menu.filter(x=>x.id!==id);save();render()}
+function mealPlanSummary(date){let plan=getPlan(date);if(!plan.items.length)return '<div class="empty">Recipe Master-ൽ recipe ചേർത്ത ശേഷം menu select ചെയ്യുക.</div>';return `<div class="tablewrap"><table class="table"><tr><th>സാധനം</th><th>ആവശ്യം</th><th>Stock</th><th>Balance / Shortage</th></tr>${plan.items.map(x=>{let st=S.rawMaterials.find(a=>a.name.toLowerCase()===x.name.toLowerCase());let have=st?Number(st.qty):0;let sh=Math.max(0,x.qty-have);return `<tr><td>${esc(x.name)}</td><td><b>${fmtQty(x.qty,x.unit)}</b></td><td>${st?fmtQty(have,st.unit):'-'}</td><td class="${sh?'bad':'good'}">${st?(sh?'Short '+fmtQty(sh,x.unit):'OK'):'Stock item ഇല്ല'}</td></tr>`}).join('')}</table></div>`}
 function saveMeals(){S.meals[S.date]={breakfast:+mb.value||0,lunch:+ml.value||0,dinner:+md.value||0};log("Meal count saved",S.date);save();render()}
 
 function page_menu(){
